@@ -43,7 +43,16 @@
     .linkparent {
         stroke: #ccc;
     }
+    .linkparent.pathover {
+        stroke: black;
+    }
+
+
     .linkother {
+        stroke: pink;
+    }
+
+    .linkother.pathover {
         stroke: red;
     }
 
@@ -160,6 +169,12 @@
                     }
             }
         }
+        function mkids(d) {
+            for (i in d.unions)
+                d.unions[i].id = i
+            for (i in d.persons)
+                d.persons[i].id = i
+        }
         function mklinks(d) {
             d.links = []
             for (i in d.unions) {
@@ -175,6 +190,7 @@
         }
         ownlinks(data)
         mklinks(data)
+        mkids(data)
 
         // make dag from edge list
         dag = d3.dagConnect()(data.links);
@@ -447,30 +463,6 @@
             return new Date(node.data.deathyear || NaN).getFullYear()
         }
 
-        function find_path(n) {
-            var parents = getParents(n);
-            var found = false;
-            var result = null;
-            parents.forEach(
-                p => {
-                    if (p && !found) {
-                        if (p.id == "profile-89285291") {
-                            found = true;
-                            result = [p, n];
-                        }
-                        else {
-                            result = find_path(p);
-                            if (result) {
-                                found = true;
-                                result.push(n)
-                            }
-                        }
-                    }
-                }
-            )
-            return result
-        }
-
         function update(source) {
 
             // Assigns the x and y position for the nodes
@@ -478,7 +470,7 @@
                 nodes = dag.descendants(),
                 links = dag.links();
 
-
+            
             // ****************** Nodes section ***************************
 
             // Update the nodes...
@@ -492,8 +484,47 @@
                     return "translate(" + source.y0 + "," + source.x0 + ")";
                 })
                 .on('click', click)
-                .on('mouseover', tip.show)
-                .on('mouseout', tip.hide)
+                .on("mouseover", function(d) {
+                    node_id = d3.select(this)._groups[0][0].__data__.id
+                    unions = [...d3.select(this)._groups[0][0].__data__.data.own_unions]
+                    parent_union = d3.select(this)._groups[0][0].__data__.data.parent_union
+                    if (parent_union)
+                        unions.push(parent_union)
+                    console.log("myid:", node_id, unions)
+                    path_list = d3.selectAll("path.link")._groups[0]
+
+                    selected_list=[]
+                    for (path in path_list){
+                        p = d3.select(path_list[path])
+                        pg = p._groups[0][0]
+                        path_data = pg.__data__
+                        if (path_data) {
+                            list_id = path_data.data
+                            for (i of unions){
+                                if (list_id.includes(i)){
+                                    selected_list.push(pg.__data__)
+                                    p.classed("pathover", true)
+                                    break
+                                }
+                            }
+                        }
+                    }
+                    console.log("selected:", selected_list)
+                    d3.select(this).select("text").style("font-weight", "bold");
+                    tip.show(d, this)
+                })
+                .on("mouseout", function(d) {
+                    tip.hide(d, this)
+                    d3.select(this).select("text").style("font-weight", "normal");
+                    path_list = d3.selectAll("path.link")._groups[0]
+                    for (p in path_list){
+                        sp = d3.select(path_list[p])
+                        path_data = sp._groups[0][0].__data__
+                        if (path_data) {
+                            sp.classed("pathover", false)
+                        }
+                    }
+                })
                 .attr('visible', true);
 
             // Add Circle for the nodes
@@ -509,8 +540,11 @@
                 .attr("dy", "-2")
                 .attr("x", 13)
                 .attr("text-anchor", "start")
-                .text(d => d.data.name);
-                // .text(function(d){if(d.data.isUnion == false) return d.data.name});
+                // .text(d => d.data.name);
+                .text(function(d){if(d.data.isUnion == true)
+                        return d.data.id + d.data.partner + d.data.children
+                    else return d.data.name + ":" + d.data.id
+                });
 
             // UPDATE
             var nodeUpdate = nodeEnter.merge(node);
@@ -552,7 +586,7 @@
 
             // Update the links...
             var link = g.selectAll('path.link')
-                .data(links, function (d) { return d.source.id + d.target.id });
+                .data(links, function (d) { console.log(d.source.id, d.target.id, d.data); return d.source.id + d.target.id });
 
             // Enter any new links at the parent's previous position.
             var linkEnter = link.enter().insert('path', "g")
@@ -605,10 +639,16 @@
             // Creates a curved (diagonal) path from parent to the child nodes
             function diagonal(s, d) {
 
-                path = `M ${s.y} ${s.x}
-            C ${(s.y + d.y) / 2} ${s.x},
-              ${(s.y + d.y) / 2} ${d.x},
-              ${d.y} ${d.x}`
+                if (s.x == d.x)
+                    path = `M ${s.y} ${s.x}
+                    C ${(s.y + d.y) / 2} ${s.x},
+                    ${(s.y + d.y) / 2} ${d.x},
+                    ${d.y} ${d.x}`
+                else
+                    path = `M ${s.y} ${s.x}
+                    C ${(s.y + d.y) / 2} ${s.x},
+                    ${(s.y + d.y) / 2} ${d.x},
+                    ${d.y} ${d.x}`
 
                 return path
             }
